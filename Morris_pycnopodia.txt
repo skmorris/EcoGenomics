@@ -1,0 +1,88 @@
+# ------------------------------------------------------
+# Ecological Genomics
+# Pycnopodia analysis script
+# Sarah K. Morris
+# 8 October 2021
+# ------------------------------------------------------
+
+# once in the server, activate qiime
+conda activate qiime2-2021.8
+
+# redirect the temp file
+export TMPDIR="/data/project_data/16S/tmptmpdir
+echo $TMPDIR
+
+# navigate to my working directory
+cd /users/s/k/skmorris/myresults/16S
+
+# import the read data as qiime artifact
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path pyc_manifest \
+  --input-format PairedEndFastqManifestPhred33V2 \
+  --output-path demux-paired-end.qza
+  
+# use DADA2 to filter data
+# (run this step in screen)
+
+qiime dada2 denoise-paired \
+--i-demultiplexed-seqs demux-paired-end_full.qza \
+--p-n-threads 1 \
+--p-trim-left-f 16 \
+--p-trim-left-r 0 \
+--p-trunc-len-f 289 \
+--p-trunc-len-r 257 \
+--o-table table.qza \
+--o-representative-sequences rep-seqs.qza \
+--o-denoising-stats denoising-stats.qza
+  
+# run the following 3 commands to summarize the output of DADA2
+qiime feature-table summarize \
+  --i-table table.qza \
+  --o-visualization table.qzv \
+  --m-sample-metadata-file /data/project_data/16S/pyc_manifest
+  
+qiime feature-table tabulate-seqs \
+  --i-data rep-seqs.qza \
+  --o-visualization rep-seqs.qzv
+  
+qiime metadata tabulate \
+  --m-input-file denoising-stats.qza \
+  --o-visualization denoising-stats.qzv
+  
+# copy the .qzv (visualization) files to local machine
+# view results using Qiime2view
+
+# use phylogeny pipeline to: 
+## 1) align (mafft). 
+## 2) mask/remove uninformative sequences
+## 3) build a tree (FastTree)
+## 4) root the tree
+
+qiime phylogeny align-to-tree-mafft-fasttree \ 
+--i-sequences rep-seqs.qza \
+--o-alignment aligned-rep-seqs.qza \
+--o-masked-alignment masked-aligned-rep-seqs.qza \
+--o-tree unrooted-tree.qza \
+--o-rooted-tree rooted-tree.qza
+
+# take rooted tree created above and input to diversity pipeline
+# this pipeline calculates diversity metrics (alpha & beta)
+
+qiime diversity core-metrics-phylogenetic \
+--i-phylogeny rooted-tree.qza \
+--i-table table.qza \
+--p-sampling-depth 9000 \
+--m-metadata-file /data/project_data/16S/pyc_manifest \
+--output-dir core-metrics-results
+
+# ADDITIONAL DIVERSITY ANALYSES:
+
+# is there a difference in beta diversity among site-animal health groups?
+
+qiime diversity beta-group-significance \
+--i-distance-matrix core-metrics-results/weighted_unifrac_distance_matrix.qza \
+--m-metadata-file /data/project_data/16S/pyc_manifest \
+--m-metadata-column site-animal-health \
+--o-visualization core-metrics-results/weighted-unifrac-site-animal-health-significance.qzv \
+--p-pairwise
